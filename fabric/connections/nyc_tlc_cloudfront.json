@@ -1,0 +1,24 @@
+{
+  "connectivityType": "ShareableCloud",
+  "displayName": "nyc_tlc_cloudfront",
+  "connectionDetails": {
+    "type": "HttpServer",
+    "creationMethod": "HttpServer.Contents",
+    "parameters": [
+      {
+        "dataType": "Text",
+        "name": "url",
+        "value": "https://d37ci6vzurychx.cloudfront.net"
+      }
+    ]
+  },
+  "privacyLevel": "Public",
+  "credentialDetails": {
+    "singleSignOnType": "None",
+    "connectionEncryption": "NotEncrypted",
+    "skipTestConnection": false,
+    "credentials": {
+      "credentialType": "Anonymous"
+    }
+  }
+}

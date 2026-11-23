@@ -1,0 +1,4 @@
+{
+  "_comment": "Target Fabric workspace for tools/fabric_sync.py. Change it to deploy the same items to another workspace.",
+  "workspace": "nyc-urban-analytics"
+}

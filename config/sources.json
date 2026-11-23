@@ -1,20 +1,19 @@
 {
-  "_comment": "Single place that describes every source. Pipelines and dataflows read it, so a new month, country or pollutant is a config change, not a code change. Secrets (OpenAQ API key) are never stored here.",
+  "_comment": "Single place that describes every source. Pipelines and dataflows read it from lh_bronze/Files/config/sources.json, so a new month, dataset, country or pollutant is a config change, not a code change. Secrets (OpenAQ API key) are never stored here.",
   "taxi_trips": {
     "type": "http_parquet",
-    "url_template": "https://d37ci6vzurychx.cloudfront.net/trip-data/{dataset}_tripdata_{yyyy}-{mm}.parquet",
+    "connection": "nyc_tlc_cloudfront",
+    "path_template": "trip-data/{dataset}_tripdata_{yyyy}-{mm}.parquet",
     "datasets": ["yellow"],
     "start_month": "2025-10",
     "end_month": "2026-09",
-    "target": "lh_bronze/Files/taxi/{dataset}/year={yyyy}/month={mm}/"
+    "target_template": "taxi/{dataset}/year={yyyy}/month={mm}"
   },
   "taxi_reference": {
     "type": "http_file",
-    "files": {
-      "taxi_zone_lookup.csv": "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv",
-      "taxi_zones.zip": "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zones.zip"
-    },
-    "target": "lh_bronze/Files/taxi/reference/"
+    "connection": "nyc_tlc_cloudfront",
+    "files": ["misc/taxi_zone_lookup.csv", "misc/taxi_zones.zip"],
+    "target_folder": "taxi/reference"
   },
   "openaq": {
     "type": "rest_api",

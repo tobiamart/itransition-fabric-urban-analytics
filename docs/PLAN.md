@@ -11,7 +11,7 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done
 | Order | Segment | Why |
 |---|---|---|
 | 1 | S0 Foundation | nothing works without the workspace and Git |
-| 2 | S1 Bronze: taxi | largest dataset, core of every question |
+| 2 | S1 Bronze: taxi ✅ | largest dataset, core of every question |
 | 3 | S3 Silver: taxi + DimDate | cleaned data is the base for the model |
 | 4 | S4 Gold: taxi star schema | first end-to-end result (minimum worth presenting) |
 | 5 | S5 Mobility report page | first visible answer |
@@ -30,19 +30,23 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] GitHub repository with this plan
 - [x] Fabric workspace `nyc-urban-analytics` on the Trial capacity
 - [x] Lakehouses `lh_bronze`, `lh_silver`, `lh_gold` and Warehouse `wh_gold`
-- [ ] Workspace connected to this repository (Fabric Git integration, folder `fabric/`)
+- [x] Items kept in `fabric/` and synced with `tools/fabric_sync.py` (the university tenant blocks
+      Fabric Git integration with GitHub, so the REST API is used instead)
 - [ ] OpenAQ account and API key (kept outside Git)
-- [ ] `config/sources.json` uploaded to `lh_bronze/Files/config/`
+- [x] `config/sources.json` uploaded to `lh_bronze/Files/config/`
 
-Done when: the workspace items appear in the repository after "Commit" in Fabric.
+Done when: every workspace item can be recreated from the repository with `fabric_sync.py deploy`.
 
 ## S1 Bronze: NYC taxi
-- [ ] Pipeline `pl_ingest_taxi`: Lookup reads the month range from `sources.json`, ForEach month runs a
-      Copy activity (HTTP → `lh_bronze/Files/taxi/yellow/year=YYYY/month=MM/`)
-- [ ] Months that already exist are skipped (re-running does not duplicate data)
-- [ ] Zone lookup CSV and zone shapefile copied to `lh_bronze/Files/taxi/reference/`
+- [x] Pipeline `pl_ingest_taxi`: Lookup reads the month range and datasets from `sources.json`,
+      ForEach (4 in parallel) runs `pl_copy_taxi_file` per (dataset, month): HTTP binary copy →
+      `lh_bronze/Files/taxi/yellow/year=YYYY/month=MM/`
+- [x] Months that already exist are skipped (Get Metadata `exists` + If Condition)
+- [x] Zone lookup CSV and zone shapefile copied to `lh_bronze/Files/taxi/reference/`
 
 Done when: 12 months of yellow taxi Parquet files are in Bronze and a second run copies nothing.
+Result: 12 files (2025-10 … 2026-09, ~800 MB) loaded in 3 min; the second run took 1 min and left
+every Parquet file unchanged (only the two small reference files are refreshed by design).
 
 ## S2 Bronze: APIs
 - [ ] Dataflow Gen2 `df_ecb_fx`: daily USD/EUR → table `bronze_ecb_fx`

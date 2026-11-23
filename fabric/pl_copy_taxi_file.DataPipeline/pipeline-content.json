@@ -1,0 +1,233 @@
+{
+  "properties": {
+    "description": "Copies one monthly taxi file (dataset + year_month) from the NYC TLC server to lh_bronze/Files as raw Parquet. The copy is skipped when the file is already in Bronze, so re-runs never download or duplicate data. Called by pl_ingest_taxi.",
+    "activities": [
+      {
+        "name": "set_source_path",
+        "description": "Relative URL of the file, e.g. trip-data/yellow_tripdata_2026-09.parquet",
+        "type": "SetVariable",
+        "dependsOn": [],
+        "policy": {
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "variableName": "source_path",
+          "value": {
+            "value": "@replace(replace(replace(pipeline().parameters.path_template, '{dataset}', pipeline().parameters.dataset), '{yyyy}', substring(pipeline().parameters.year_month, 0, 4)), '{mm}', substring(pipeline().parameters.year_month, 5, 2))",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "set_target_folder",
+        "description": "Bronze folder partitioned by year and month, e.g. taxi/yellow/year=2026/month=09",
+        "type": "SetVariable",
+        "dependsOn": [
+          {
+            "activity": "set_source_path",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "variableName": "target_folder",
+          "value": {
+            "value": "@replace(replace(replace(pipeline().parameters.target_template, '{dataset}', pipeline().parameters.dataset), '{yyyy}', substring(pipeline().parameters.year_month, 0, 4)), '{mm}', substring(pipeline().parameters.year_month, 5, 2))",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "check_target",
+        "description": "Does the file already exist in Bronze?",
+        "type": "GetMetadata",
+        "dependsOn": [
+          {
+            "activity": "set_target_folder",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.00:05:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "datasetSettings": {
+            "annotations": [],
+            "linkedService": {
+              "name": "lh_bronze",
+              "properties": {
+                "annotations": [],
+                "type": "Lakehouse",
+                "typeProperties": {
+                  "workspaceId": "{{workspace}}",
+                  "artifactId": "{{item:lh_bronze.Lakehouse}}",
+                  "rootFolder": "Files"
+                }
+              }
+            },
+            "type": "Binary",
+            "typeProperties": {
+              "location": {
+                "type": "LakehouseLocation",
+                "folderPath": {
+                  "value": "@variables('target_folder')",
+                  "type": "Expression"
+                },
+                "fileName": {
+                  "value": "@last(split(variables('source_path'), '/'))",
+                  "type": "Expression"
+                }
+              }
+            }
+          },
+          "fieldList": [
+            "exists"
+          ],
+          "storeSettings": {
+            "type": "LakehouseReadSettings",
+            "enablePartitionDiscovery": false
+          },
+          "formatSettings": {
+            "type": "BinaryReadSettings"
+          }
+        }
+      },
+      {
+        "name": "if_missing",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "check_target",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@not(activity('check_target').output.exists)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "copy_file",
+              "description": "Binary copy: Bronze keeps the file exactly as published",
+              "type": "Copy",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.01:00:00",
+                "retry": 2,
+                "retryIntervalInSeconds": 60,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "BinarySource",
+                  "storeSettings": {
+                    "type": "HttpReadSettings",
+                    "requestMethod": "GET"
+                  },
+                  "formatSettings": {
+                    "type": "BinaryReadSettings"
+                  },
+                  "datasetSettings": {
+                    "annotations": [],
+                    "type": "Binary",
+                    "typeProperties": {
+                      "location": {
+                        "type": "HttpServerLocation",
+                        "relativeUrl": {
+                          "value": "@variables('source_path')",
+                          "type": "Expression"
+                        }
+                      }
+                    },
+                    "externalReferences": {
+                      "connection": "{{connection:nyc_tlc_cloudfront}}"
+                    }
+                  }
+                },
+                "sink": {
+                  "type": "BinarySink",
+                  "storeSettings": {
+                    "type": "LakehouseWriteSettings"
+                  },
+                  "datasetSettings": {
+                    "annotations": [],
+                    "linkedService": {
+                      "name": "lh_bronze",
+                      "properties": {
+                        "annotations": [],
+                        "type": "Lakehouse",
+                        "typeProperties": {
+                          "workspaceId": "{{workspace}}",
+                          "artifactId": "{{item:lh_bronze.Lakehouse}}",
+                          "rootFolder": "Files"
+                        }
+                      }
+                    },
+                    "type": "Binary",
+                    "typeProperties": {
+                      "location": {
+                        "type": "LakehouseLocation",
+                        "folderPath": {
+                          "value": "@variables('target_folder')",
+                          "type": "Expression"
+                        },
+                        "fileName": {
+                          "value": "@last(split(variables('source_path'), '/'))",
+                          "type": "Expression"
+                        }
+                      }
+                    }
+                  }
+                },
+                "enableStaging": false
+              }
+            }
+          ],
+          "ifFalseActivities": []
+        }
+      }
+    ],
+    "parameters": {
+      "dataset": {
+        "type": "string",
+        "defaultValue": "yellow"
+      },
+      "year_month": {
+        "type": "string",
+        "defaultValue": "2026-09"
+      },
+      "path_template": {
+        "type": "string",
+        "defaultValue": "trip-data/{dataset}_tripdata_{yyyy}-{mm}.parquet"
+      },
+      "target_template": {
+        "type": "string",
+        "defaultValue": "taxi/{dataset}/year={yyyy}/month={mm}"
+      }
+    },
+    "variables": {
+      "source_path": {
+        "type": "String"
+      },
+      "target_folder": {
+        "type": "String"
+      }
+    }
+  }
+}

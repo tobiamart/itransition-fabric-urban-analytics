@@ -1,0 +1,241 @@
+{
+  "properties": {
+    "description": "Bronze ingestion of NYC TLC taxi data. Reads the month range and datasets from lh_bronze/Files/config/sources.json, runs pl_copy_taxi_file for every (dataset, month) pair and refreshes the taxi zone reference files.",
+    "activities": [
+      {
+        "name": "read_config",
+        "description": "Loads config/sources.json from lh_bronze",
+        "type": "Lookup",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.00:05:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "JsonSource",
+            "storeSettings": {
+              "type": "LakehouseReadSettings",
+              "recursive": false,
+              "enablePartitionDiscovery": false
+            },
+            "formatSettings": {
+              "type": "JsonReadSettings"
+            }
+          },
+          "firstRowOnly": true,
+          "datasetSettings": {
+            "annotations": [],
+            "linkedService": {
+              "name": "lh_bronze",
+              "properties": {
+                "annotations": [],
+                "type": "Lakehouse",
+                "typeProperties": {
+                  "workspaceId": "{{workspace}}",
+                  "artifactId": "{{item:lh_bronze.Lakehouse}}",
+                  "rootFolder": "Files"
+                }
+              }
+            },
+            "type": "Json",
+            "typeProperties": {
+              "location": {
+                "type": "LakehouseLocation",
+                "folderPath": "config",
+                "fileName": "sources.json"
+              }
+            },
+            "schema": {}
+          }
+        }
+      },
+      {
+        "name": "set_month_count",
+        "description": "Number of months between start_month and end_month, inclusive",
+        "type": "SetVariable",
+        "dependsOn": [
+          {
+            "activity": "read_config",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "variableName": "month_count",
+          "value": {
+            "value": "@string(add(sub(add(mul(int(substring(activity('read_config').output.firstRow.taxi_trips.end_month, 0, 4)), 12), int(substring(activity('read_config').output.firstRow.taxi_trips.end_month, 5, 2))), add(mul(int(substring(activity('read_config').output.firstRow.taxi_trips.start_month, 0, 4)), 12), int(substring(activity('read_config').output.firstRow.taxi_trips.start_month, 5, 2)))), 1))",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "for_each_trip_file",
+        "description": "One iteration per (dataset, month): index i -> dataset datasets[i / month_count], month start_month + (i % month_count)",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "set_month_count",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "items": {
+            "value": "@range(0, mul(int(variables('month_count')), length(activity('read_config').output.firstRow.taxi_trips.datasets)))",
+            "type": "Expression"
+          },
+          "isSequential": false,
+          "batchCount": 4,
+          "activities": [
+            {
+              "name": "copy_trip_file",
+              "type": "ExecutePipeline",
+              "dependsOn": [],
+              "policy": {
+                "secureInput": false
+              },
+              "typeProperties": {
+                "pipeline": {
+                  "referenceName": "{{item:pl_copy_taxi_file.DataPipeline}}",
+                  "type": "PipelineReference"
+                },
+                "waitOnCompletion": true,
+                "parameters": {
+                  "dataset": {
+                    "value": "@activity('read_config').output.firstRow.taxi_trips.datasets[div(item(), int(variables('month_count')))]",
+                    "type": "Expression"
+                  },
+                  "year_month": {
+                    "value": "@formatDateTime(addToTime(concat(activity('read_config').output.firstRow.taxi_trips.start_month, '-01T00:00:00Z'), mod(item(), int(variables('month_count'))), 'Month'), 'yyyy-MM')",
+                    "type": "Expression"
+                  },
+                  "path_template": {
+                    "value": "@activity('read_config').output.firstRow.taxi_trips.path_template",
+                    "type": "Expression"
+                  },
+                  "target_template": {
+                    "value": "@activity('read_config').output.firstRow.taxi_trips.target_template",
+                    "type": "Expression"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "for_each_reference_file",
+        "description": "Zone lookup CSV and zone shapefile; small, so they are refreshed on every run",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "read_config",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "items": {
+            "value": "@activity('read_config').output.firstRow.taxi_reference.files",
+            "type": "Expression"
+          },
+          "isSequential": false,
+          "activities": [
+            {
+              "name": "copy_reference_file",
+              "type": "Copy",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.00:10:00",
+                "retry": 2,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "BinarySource",
+                  "storeSettings": {
+                    "type": "HttpReadSettings",
+                    "requestMethod": "GET"
+                  },
+                  "formatSettings": {
+                    "type": "BinaryReadSettings"
+                  },
+                  "datasetSettings": {
+                    "annotations": [],
+                    "type": "Binary",
+                    "typeProperties": {
+                      "location": {
+                        "type": "HttpServerLocation",
+                        "relativeUrl": {
+                          "value": "@item()",
+                          "type": "Expression"
+                        }
+                      }
+                    },
+                    "externalReferences": {
+                      "connection": "{{connection:nyc_tlc_cloudfront}}"
+                    }
+                  }
+                },
+                "sink": {
+                  "type": "BinarySink",
+                  "storeSettings": {
+                    "type": "LakehouseWriteSettings"
+                  },
+                  "datasetSettings": {
+                    "annotations": [],
+                    "linkedService": {
+                      "name": "lh_bronze",
+                      "properties": {
+                        "annotations": [],
+                        "type": "Lakehouse",
+                        "typeProperties": {
+                          "workspaceId": "{{workspace}}",
+                          "artifactId": "{{item:lh_bronze.Lakehouse}}",
+                          "rootFolder": "Files"
+                        }
+                      }
+                    },
+                    "type": "Binary",
+                    "typeProperties": {
+                      "location": {
+                        "type": "LakehouseLocation",
+                        "folderPath": {
+                          "value": "@activity('read_config').output.firstRow.taxi_reference.target_folder",
+                          "type": "Expression"
+                        },
+                        "fileName": {
+                          "value": "@last(split(item(), '/'))",
+                          "type": "Expression"
+                        }
+                      }
+                    }
+                  }
+                },
+                "enableStaging": false
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "variables": {
+      "month_count": {
+        "type": "String"
+      }
+    }
+  }
+}

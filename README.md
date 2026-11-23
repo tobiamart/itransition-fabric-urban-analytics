@@ -35,7 +35,9 @@ flowchart LR
 | Path | Content |
 |---|---|
 | `config/sources.json` | every data source in one place (months, countries, pollutants, URLs) |
-| `fabric/` | workspace items synced by Fabric Git integration (pipelines, dataflows, notebooks) |
+| `config/fabric.json` | target Fabric workspace |
+| `fabric/` | workspace items (pipelines, dataflows, notebooks) and connections, see [fabric/README.md](fabric/README.md) |
+| `tools/fabric_sync.py` | deploys `fabric/` to the workspace and exports it back through the Fabric REST API |
 | `sql/` | warehouse DDL, load scripts and analytical queries |
 | `docs/PLAN.md` | project plan split into segments, with progress |
 | `docs/` | data dictionary, lineage, governance |
