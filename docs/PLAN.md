@@ -28,8 +28,8 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## S0 Foundation
 - [x] GitHub repository with this plan
-- [ ] Fabric workspace `nyc-urban-analytics` on the Trial capacity
-- [ ] Lakehouses `lh_bronze`, `lh_silver`, `lh_gold` and Warehouse `wh_gold`
+- [x] Fabric workspace `nyc-urban-analytics` on the Trial capacity
+- [x] Lakehouses `lh_bronze`, `lh_silver`, `lh_gold` and Warehouse `wh_gold`
 - [ ] Workspace connected to this repository (Fabric Git integration, folder `fabric/`)
 - [ ] OpenAQ account and API key (kept outside Git)
 - [ ] `config/sources.json` uploaded to `lh_bronze/Files/config/`
