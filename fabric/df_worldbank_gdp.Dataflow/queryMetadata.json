@@ -1,0 +1,32 @@
+{
+  "formatVersion": "202502",
+  "computeEngineSettings": {},
+  "name": "df_worldbank_gdp",
+  "queryGroups": [],
+  "documentLocale": "en-US",
+  "queriesMetadata": {
+    "bronze_worldbank_gdp": {
+      "queryId": "ce6ed6c0-a21c-4f24-a556-37d9b1a4cace",
+      "queryName": "bronze_worldbank_gdp",
+      "loadEnabled": false
+    },
+    "bronze_worldbank_gdp_DataDestination": {
+      "queryId": "b692a53d-c2ce-48b6-9aea-92720f54d823",
+      "queryName": "bronze_worldbank_gdp_DataDestination",
+      "isHidden": true,
+      "loadEnabled": false
+    }
+  },
+  "connections": [
+    {
+      "path": "https://api.worldbank.org/v2",
+      "kind": "Web",
+      "connectionId": "{\"ClusterId\":\"dd6fadcf-b1b3-422a-886d-edadb481ce5e\",\"DatasourceId\":\"{{connection:worldbank_api}}\"}"
+    },
+    {
+      "path": "Lakehouse",
+      "kind": "Lakehouse",
+      "connectionId": "{\"ClusterId\":\"dd6fadcf-b1b3-422a-886d-edadb481ce5e\",\"DatasourceId\":\"{{connection:fabric_lakehouse}}\"}"
+    }
+  ]
+}

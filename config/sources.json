@@ -15,23 +15,30 @@
     "files": ["misc/taxi_zone_lookup.csv", "misc/taxi_zones.zip"],
     "target_folder": "taxi/reference"
   },
+  "_comment_apis": "The API sources below are loaded by Dataflow Gen2 items. Their settings live at the top of each query in fabric/<dataflow>/mashup.pq; this section documents them in one place.",
   "openaq": {
     "type": "rest_api",
+    "dataflow": "df_openaq",
     "base_url": "https://api.openaq.org/v3",
-    "auth": "X-API-Key header, key kept outside Git",
+    "auth": "X-API-Key header; the key is in .env (never committed) and filled in on deploy",
     "nyc_bbox": [-74.26, 40.49, -73.70, 40.92],
     "parameters": ["pm25", "no2", "o3"],
+    "date_from": "2025-10-01",
+    "date_to": "2026-10-01",
     "page_limit": 1000,
-    "target_table": "bronze_openaq_daily"
+    "target_tables": ["bronze_openaq_locations", "bronze_openaq_daily"]
   },
   "worldbank_gdp": {
     "type": "rest_api",
-    "url_template": "https://api.worldbank.org/v2/country/{country}/indicator/NY.GDP.MKTP.CD?format=json&per_page=100",
+    "dataflow": "df_worldbank_gdp",
+    "base_url": "https://api.worldbank.org/v2",
+    "indicator": "NY.GDP.MKTP.CD",
     "countries": ["USA"],
     "target_table": "bronze_worldbank_gdp"
   },
   "ecb_fx": {
     "type": "http_csv",
+    "dataflow": "df_ecb_fx",
     "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata",
     "target_table": "bronze_ecb_fx"
   }

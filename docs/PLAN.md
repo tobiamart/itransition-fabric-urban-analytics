@@ -15,9 +15,9 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done
 | 3 | S3 Silver: taxi + DimDate | cleaned data is the base for the model |
 | 4 | S4 Gold: taxi star schema | first end-to-end result (minimum worth presenting) |
 | 5 | S5 Mobility report page | first visible answer |
-| 6 | S2 Bronze: World Bank + ECB | small and easy, unlocks USD/EUR questions |
+| 6 | S2 Bronze: World Bank + ECB ✅ | small and easy, unlocks USD/EUR questions |
 | 7 | S3/S4 economy part | DimFX, DimGDP, revenue in EUR |
-| 8 | S2 Bronze: OpenAQ | needs an API key and pagination |
+| 8 | S2 Bronze: OpenAQ ✅ | needs an API key and pagination |
 | 9 | S3/S4/S5 air quality part | completes the cross-domain questions |
 | 10 | S6 Orchestration & governance | automated refresh, lineage |
 | 11 | S7 Documentation | required deliverable |
@@ -32,7 +32,7 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] Lakehouses `lh_bronze`, `lh_silver`, `lh_gold` and Warehouse `wh_gold`
 - [x] Items kept in `fabric/` and synced with `tools/fabric_sync.py` (the university tenant blocks
       Fabric Git integration with GitHub, so the REST API is used instead)
-- [ ] OpenAQ account and API key (kept outside Git)
+- [x] OpenAQ account and API key (kept outside Git)
 - [x] `config/sources.json` uploaded to `lh_bronze/Files/config/`
 
 Done when: every workspace item can be recreated from the repository with `fabric_sync.py deploy`.
@@ -49,13 +49,16 @@ Result: 12 files (2025-10 … 2026-09, ~800 MB) loaded in 3 min; the second run 
 every Parquet file unchanged (only the two small reference files are refreshed by design).
 
 ## S2 Bronze: APIs
-- [ ] Dataflow Gen2 `df_ecb_fx`: daily USD/EUR → table `bronze_ecb_fx`
-- [ ] Dataflow Gen2 `df_worldbank_gdp`: yearly GDP (USD) → table `bronze_worldbank_gdp`
-- [ ] Dataflow Gen2 `df_openaq`: NYC locations (bounding box) → sensors for PM2.5 / NO2 / O3 →
-      daily values, paginated with `page`/`limit` (max 1000) → table `bronze_openaq_daily`
-- [ ] Every Bronze table keeps the raw values plus `_ingested_at` and `_source`
+- [x] Dataflow Gen2 `df_ecb_fx`: daily USD/EUR → table `bronze_ecb_fx` (7,204 rows since 1999)
+- [x] Dataflow Gen2 `df_worldbank_gdp`: yearly GDP (USD) → table `bronze_worldbank_gdp` (66 years)
+- [x] Dataflow Gen2 `df_openaq`: NYC locations (bounding box) → sensors for PM2.5 / NO2 / O3 →
+      daily values, paginated with `page`/`limit` (max 1000), throttled to 60 requests/min →
+      tables `bronze_openaq_locations` (288 sensors, 76 locations) and `bronze_openaq_daily` (15,168 rows)
+- [x] Every Bronze table keeps the raw values plus `_ingested_at` and `_source`
+- [x] OpenAQ key only in `.env`; placeholder in Git, pre-commit hook blocks leaks
 
-Done when: the three tables exist and a refresh appends only new data.
+Done when: the tables exist and a refresh does not duplicate rows (destinations replace the table;
+verified: a second `df_ecb_fx` run left 7,204 rows).
 
 ## S3 Silver: cleaning and conforming (PySpark notebooks)
 - [ ] `nb_silver_taxi`: snake_case names, proper types, duplicates removed, derived columns

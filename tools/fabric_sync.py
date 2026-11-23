@@ -19,6 +19,7 @@ are resolved on deploy and restored on export:
     {{workspace}}             id of the target workspace (config/fabric.json)
     {{item:NAME.Type}}        id of an item in that workspace, e.g. {{item:lh_bronze.Lakehouse}}
     {{connection:NAME}}       id of a Fabric connection, by display name
+    {{secret:NAME}}           value of NAME from .env (never committed, see local_secrets.py)
 """
 
 from __future__ import annotations
@@ -40,6 +41,8 @@ from azure.identity import (
     TokenCachePersistenceOptions,
 )
 
+import local_secrets
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config" / "fabric.json").read_text(encoding="utf-8"))
 
@@ -52,8 +55,9 @@ STORAGE_SCOPE = "https://storage.azure.com/.default"
 AUTH_RECORD = Path.home() / ".fabric_sync" / "auth_record.json"
 TOKEN_CACHE = TokenCachePersistenceOptions(name="fabric_sync")
 
-PLACEHOLDER = re.compile(r"\{\{(workspace|item|connection)(?::([^}]+))?\}\}")
+PLACEHOLDER = re.compile(r"\{\{(workspace|item|connection|secret)(?::([^}]+))?\}\}")
 FINISHED = {"Completed", "Failed", "Cancelled", "Deduped"}
+JOB_TYPES = {"DataPipeline": "Pipeline", "Dataflow": "Refresh", "Notebook": "RunNotebook"}
 
 
 def b64(text: str) -> str:
@@ -61,7 +65,7 @@ def b64(text: str) -> str:
 
 
 def fail(message: str) -> None:
-    sys.exit(f"error: {message}")
+    sys.exit(f"error: {local_secrets.redact(message)}")
 
 
 class Fabric:
@@ -170,8 +174,10 @@ class Fabric:
         return self._connections
 
     def connection_id(self, name: str) -> str:
+        # Connections created in the dataflow editor get the user's alias appended ("name alias"),
+        # so a placeholder name also matches "name <anything>".
         for connection in self.connections():
-            if connection.get("displayName") == name:
+            if connection.get("displayName", "").split(" ")[0] == name:
                 return connection["id"]
         fail(f"connection '{name}' not found")
 
@@ -184,17 +190,21 @@ class Fabric:
                 return self.workspace_id
             if kind == "item":
                 return self.item_id(name)
+            if kind == "secret":
+                return local_secrets.get(name)
             return self.connection_id(name)
 
         return PLACEHOLDER.sub(replace, text)
 
     def unresolve(self, text: str) -> str:
+        for name, value in local_secrets.searchable().items():
+            text = text.replace(value, "{{secret:%s}}" % name)
         known = {self.workspace_id: "{{workspace}}"}
         for item in self.items():
             known[item["id"]] = "{{item:%s.%s}}" % (item["displayName"], item["type"])
         for connection in self.connections():
-            if connection.get("displayName"):
-                known[connection["id"]] = "{{connection:%s}}" % connection["displayName"]
+            if connection.get("displayName"):  # without the appended user alias, see connection_id
+                known[connection["id"]] = "{{connection:%s}}" % connection["displayName"].split(" ")[0]
         for item_id, placeholder in known.items():
             text = re.sub(re.escape(item_id), placeholder, text, flags=re.IGNORECASE)
         return text
@@ -267,9 +277,12 @@ def cmd_export(args) -> None:
             content = base64.b64decode(part["payload"]).decode("utf-8")
             if part["path"].endswith(".json"):
                 content = json.dumps(json.loads(content), indent=2, ensure_ascii=False) + "\n"
+            content = fabric.unresolve(content)
+            if local_secrets.leaks(content):
+                fail(f"{ref}/{part['path']} still contains a secret value, nothing written")
             target = folder / part["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(fabric.unresolve(content), encoding="utf-8", newline="\n")
+            target.write_text(content, encoding="utf-8", newline="\n")
             print(f"exported {target.relative_to(ROOT).as_posix()}")
 
 
@@ -279,7 +292,7 @@ def cmd_connect(args) -> None:
     for file in sorted((ROOT / "fabric" / "connections").glob("*.json")):
         body = json.loads(file.read_text(encoding="utf-8"))
         name = body["displayName"]
-        if any(c.get("displayName") == name for c in fabric.connections()):
+        if any(c.get("displayName", "").split(" ")[0] == name for c in fabric.connections()):
             print(f"exists   connection {name}")
             continue
         fabric.call("POST", "connections", body)
@@ -311,14 +324,52 @@ def cmd_ls(args) -> None:
             print(f"{int(path.get('contentLength', 0)) / 1e6:>8.1f} MB  {path.get('lastModified', '')}  {name}")
 
 
+def cmd_tables(args) -> None:
+    """Delta tables of a lakehouse with their current row count, read from the Delta log."""
+    fabric = Fabric()
+    item = fabric.item_id(args.item)
+    version = {"x-ms-version": "2023-11-03"}
+
+    def children(path: str) -> list:
+        response = fabric.request(
+            "GET", f"{ONELAKE}/{fabric.workspace_id}?resource=filesystem&recursive=false&directory={item}/{path}",
+            scope=STORAGE_SCOPE, headers=version)
+        return response.json().get("paths", [])
+
+    def read(name: str) -> str:
+        return fabric.request("GET", f"{ONELAKE}/{fabric.workspace_id}/{name}", scope=STORAGE_SCOPE,
+                              headers=version).text
+
+    for schema in (p["name"].rsplit("/", 1)[1] for p in children("Tables") if p.get("isDirectory") == "true"):
+        for table in (p["name"].rsplit("/", 1)[1] for p in children(f"Tables/{schema}")
+                      if p.get("isDirectory") == "true"):
+            log = sorted(p["name"] for p in children(f"Tables/{schema}/{table}/_delta_log")
+                         if p["name"].endswith(".json"))
+            files: dict = {}
+            for name in log:
+                for line in read(name).splitlines():
+                    action = json.loads(line)
+                    if "add" in action:
+                        files[action["add"]["path"]] = json.loads(action["add"].get("stats") or "{}").get("numRecords")
+                    elif "remove" in action:
+                        files.pop(action["remove"]["path"], None)
+            counts = list(files.values())
+            rows = sum(counts) if None not in counts else "?"
+            print(f"{schema}.{table:<32} {rows:>12,} rows  {len(files)} files  version {len(log) - 1}")
+
+
 def cmd_run(args) -> None:
     fabric = Fabric()
-    item_id = fabric.item_id(f"{args.pipeline}.DataPipeline")
+    ref = args.item if "." in args.item else f"{args.item}.DataPipeline"
+    job_type = JOB_TYPES.get(ref.rpartition(".")[2])
+    if job_type is None:
+        fail(f"cannot run {ref}, supported types: {', '.join(JOB_TYPES)}")
     parameters = dict(p.split("=", 1) for p in args.param)
     body = {"executionData": {"parameters": parameters}} if parameters else None
-    response = fabric.request("POST", f"workspaces/{fabric.workspace_id}/items/{item_id}/jobs/instances?jobType=Pipeline", body)
+    response = fabric.request(
+        "POST", f"workspaces/{fabric.workspace_id}/items/{fabric.item_id(ref)}/jobs/instances?jobType={job_type}", body)
     location = response.headers["Location"]
-    print(f"started  {args.pipeline}: {location.rsplit('/', 1)[-1]}")
+    print(f"started  {ref}: {location.rsplit('/', 1)[-1]}")
     if not args.wait:
         return
     status, started = None, time.time()
@@ -332,7 +383,30 @@ def cmd_run(args) -> None:
         fail(json.dumps(job.get("failureReason"), indent=2))
 
 
+def cmd_jobs(args) -> None:
+    """Latest run of each item; with --wait, poll until all of them have finished."""
+    fabric = Fabric()
+    while True:
+        latest = {}
+        for ref in args.items:
+            runs = fabric.list(f"workspaces/{fabric.workspace_id}/items/{fabric.item_id(ref)}/jobs/instances")
+            latest[ref] = max(runs, key=lambda r: r.get("startTimeUtc") or "") if runs else None
+        if not args.wait or all(r is None or r["status"] in FINISHED for r in latest.values()):
+            break
+        time.sleep(20)
+    for ref, run in latest.items():
+        if run is None:
+            print(f"{ref:<32} never run")
+            continue
+        error = (run.get("failureReason") or {}).get("message", "")
+        print(f"{ref:<32} {run['status']:<11} {run.get('startTimeUtc', '')[:19]}  {run.get('endTimeUtc') or ''}"[:100])
+        if error:
+            print(f"    {local_secrets.redact(error)}")
+
+
 def cmd_api(args) -> None:
+    if args.path.rstrip("/").endswith("getDefinition"):
+        fail("use the export command: it removes secrets, a raw getDefinition would print them")
     fabric = Fabric()
     body = json.loads(Path(args.body).read_text(encoding="utf-8")) if args.body else None
     print(json.dumps(fabric.call(args.method.upper(), fabric.resolve(args.path), body), indent=2))
@@ -372,11 +446,20 @@ def main() -> None:
     ls.add_argument("path", help="folder inside the item, e.g. Files/taxi")
     ls.set_defaults(func=cmd_ls)
 
-    run = commands.add_parser("run", help="run a pipeline")
-    run.add_argument("pipeline")
+    tables = commands.add_parser("tables", help="Delta tables of a lakehouse with row counts")
+    tables.add_argument("item", help="NAME.Type, e.g. lh_bronze.Lakehouse")
+    tables.set_defaults(func=cmd_tables)
+
+    run = commands.add_parser("run", help="run a pipeline, dataflow or notebook")
+    run.add_argument("item", help="NAME (a pipeline) or NAME.Type, e.g. df_ecb_fx.Dataflow")
     run.add_argument("--param", action="append", default=[], help="name=value, repeatable")
     run.add_argument("--wait", action="store_true", help="wait and print status changes")
     run.set_defaults(func=cmd_run)
+
+    jobs = commands.add_parser("jobs", help="latest run of pipelines / dataflows / notebooks")
+    jobs.add_argument("items", nargs="+", help="NAME.Type, e.g. df_openaq.Dataflow")
+    jobs.add_argument("--wait", action="store_true", help="wait until the runs have finished")
+    jobs.set_defaults(func=cmd_jobs)
 
     api = commands.add_parser("api", help="raw API call, placeholders allowed in the path")
     api.add_argument("method")
