@@ -1,0 +1,39 @@
+{
+  "_comment": "Single place that describes every source. Pipelines and dataflows read it, so a new month, country or pollutant is a config change, not a code change. Secrets (OpenAQ API key) are never stored here.",
+  "taxi_trips": {
+    "type": "http_parquet",
+    "url_template": "https://d37ci6vzurychx.cloudfront.net/trip-data/{dataset}_tripdata_{yyyy}-{mm}.parquet",
+    "datasets": ["yellow"],
+    "start_month": "2025-10",
+    "end_month": "2026-09",
+    "target": "lh_bronze/Files/taxi/{dataset}/year={yyyy}/month={mm}/"
+  },
+  "taxi_reference": {
+    "type": "http_file",
+    "files": {
+      "taxi_zone_lookup.csv": "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv",
+      "taxi_zones.zip": "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zones.zip"
+    },
+    "target": "lh_bronze/Files/taxi/reference/"
+  },
+  "openaq": {
+    "type": "rest_api",
+    "base_url": "https://api.openaq.org/v3",
+    "auth": "X-API-Key header, key kept outside Git",
+    "nyc_bbox": [-74.26, 40.49, -73.70, 40.92],
+    "parameters": ["pm25", "no2", "o3"],
+    "page_limit": 1000,
+    "target_table": "bronze_openaq_daily"
+  },
+  "worldbank_gdp": {
+    "type": "rest_api",
+    "url_template": "https://api.worldbank.org/v2/country/{country}/indicator/NY.GDP.MKTP.CD?format=json&per_page=100",
+    "countries": ["USA"],
+    "target_table": "bronze_worldbank_gdp"
+  },
+  "ecb_fx": {
+    "type": "http_csv",
+    "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata",
+    "target_table": "bronze_ecb_fx"
+  }
+}
