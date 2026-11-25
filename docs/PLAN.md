@@ -12,13 +12,13 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done
 |---|---|---|
 | 1 | S0 Foundation | nothing works without the workspace and Git |
 | 2 | S1 Bronze: taxi ✅ | largest dataset, core of every question |
-| 3 | S3 Silver: taxi + DimDate | cleaned data is the base for the model |
+| 3 | S3 Silver: taxi + DimDate ✅ | cleaned data is the base for the model |
 | 4 | S4 Gold: taxi star schema | first end-to-end result (minimum worth presenting) |
 | 5 | S5 Mobility report page | first visible answer |
 | 6 | S2 Bronze: World Bank + ECB ✅ | small and easy, unlocks USD/EUR questions |
-| 7 | S3/S4 economy part | DimFX, DimGDP, revenue in EUR |
+| 7 | S3/S4 economy part (S3 ✅) | DimFX, DimGDP, revenue in EUR |
 | 8 | S2 Bronze: OpenAQ ✅ | needs an API key and pagination |
-| 9 | S3/S4/S5 air quality part | completes the cross-domain questions |
+| 9 | S3/S4/S5 air quality part (S3 ✅) | completes the cross-domain questions |
 | 10 | S6 Orchestration & governance | automated refresh, lineage |
 | 11 | S7 Documentation | required deliverable |
 | 12 | S8 Extra integrations | graded separately, only after the core is complete |
@@ -61,15 +61,21 @@ Done when: the tables exist and a refresh does not duplicate rows (destinations 
 verified: a second `df_ecb_fx` run left 7,204 rows).
 
 ## S3 Silver: cleaning and conforming (PySpark notebooks)
-- [ ] `nb_silver_taxi`: snake_case names, proper types, duplicates removed, derived columns
+- [x] `nb_silver_taxi`: snake_case names, proper types, duplicates removed, derived columns
       (`pickup_date`, `pickup_hour`, `trip_duration_min`, `is_airport_trip`), zone names joined.
-      Suspicious rows are **flagged, not dropped** (`dq_flags`: zero distance, negative fare, trip
-      longer than 24 h, pickup outside the file's month) so they can be analysed separately
-- [ ] `nb_silver_air`: one row per location, day and pollutant; units normalised; location mapped
-      to taxi zone / borough (point-in-polygon with the zone shapefile)
-- [ ] `nb_silver_econ`: FX filled for weekends and holidays (last known rate), GDP per year
-- [ ] `nb_dim_date`: calendar table (date, weekday, month, quarter, year, is_weekend, US holidays)
-- [ ] Row counts per step written to `silver_dq_log` (in, out, flagged)
+      Suspicious rows are **flagged, not dropped**: error checks (zero distance, negative amount,
+      duration ≤ 0 or > 24 h, > 200 mi, pickup outside the file's month) make a row invalid;
+      warning checks (missing passenger count, unknown zone) only mark it
+- [x] `nb_silver_air`: one row per sensor and day; units normalised (PM2.5 µg/m³, NO2/O3 ppb);
+      locations mapped to taxi zone / borough (point-in-polygon with the zone shapefile);
+      days under 75 % coverage flagged
+- [x] `nb_silver_econ`: FX filled for weekends and holidays (last known rate), GDP per year with growth
+- [x] `nb_dim_date`: calendar table 2015–2027 (weekday, month, quarter, season, weekend, US/NY holidays)
+- [x] Row counts per step written to `silver_dq_log` (in, duplicates, out, flagged, per check)
+
+Results: 46.5 M taxi trips (7 duplicates removed); 76 air locations, 56 inside NYC zones;
+15,168 sensor-days (512 flagged: 504 low coverage, 10 negative); 10,186 FX days (3,044 filled);
+66 GDP years; 4,748 calendar days.
 
 Done when: Silver Delta tables exist, partitioned by year/month where large, and the DQ log explains
 every difference in row counts.

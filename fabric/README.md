@@ -17,7 +17,18 @@ to any workspace named in `config/fabric.json`.
 | `df_worldbank_gdp.Dataflow` | World Bank yearly GDP in USD (JSON, all pages) → table `bronze_worldbank_gdp` |
 | `df_openaq.Dataflow` | OpenAQ v3: sensors in the NYC bounding box → `bronze_openaq_locations`; daily PM2.5 / NO2 / O3 summaries per sensor, paginated (1000 rows per page) and throttled to stay under 60 requests/min → `bronze_openaq_daily` |
 
-Every Bronze table also has `_ingested_at` (UTC load time) and `_source`. Dataflow destinations use
+| `nb_silver_taxi.Notebook` | all monthly taxi files → `silver_taxi_trips` (one schema, deduplicated, enriched, `dq_flags` / `is_valid`) and `silver_taxi_zones` |
+| `nb_silver_air.Notebook` | OpenAQ → `silver_air_locations` (mapped to taxi zones) and `silver_air_quality_daily` (units normalised, flagged) |
+| `nb_silver_econ.Notebook` | `silver_fx_daily` (every day, gaps filled with the last rate) and `silver_gdp_yearly` (with growth) |
+| `nb_dim_date.Notebook` | `silver_dim_date`: calendar 2015–2027 with weekends, seasons and US / NY holidays |
+
+Every Bronze table also has `_ingested_at` (UTC load time) and `_source`. Every Silver notebook
+writes its row counts and check results to `silver_dq_log`. Column descriptions are in
+[docs/DATA_DICTIONARY.md](../docs/DATA_DICTIONARY.md).
+
+Notebooks reach both lakehouses through OneLake paths built from the placeholders, so they need no
+default lakehouse. Run one with `fabric_sync.py run nb_silver_taxi.Notebook --wait`; the latest
+metrics are in `lh_silver/Files/dq/` (`fabric_sync.py cat lh_silver.Lakehouse Files/dq/<file>.json`). Dataflow destinations use
 the automatic (replace) mode, so a refresh reloads the table and never duplicates rows.
 
 ## Secrets

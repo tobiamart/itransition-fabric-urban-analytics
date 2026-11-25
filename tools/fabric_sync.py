@@ -324,6 +324,14 @@ def cmd_ls(args) -> None:
             print(f"{int(path.get('contentLength', 0)) / 1e6:>8.1f} MB  {path.get('lastModified', '')}  {name}")
 
 
+def cmd_cat(args) -> None:
+    """Print a small text file from a lakehouse (e.g. a notebook's JSON report)."""
+    fabric = Fabric()
+    url = f"{ONELAKE}/{fabric.workspace_id}/{fabric.item_id(args.item)}/{args.path.lstrip('/')}"
+    text = fabric.request("GET", url, scope=STORAGE_SCOPE, headers={"x-ms-version": "2023-11-03"}).text
+    print(local_secrets.redact(text))
+
+
 def cmd_tables(args) -> None:
     """Delta tables of a lakehouse with their current row count, read from the Delta log."""
     fabric = Fabric()
@@ -445,6 +453,11 @@ def main() -> None:
     ls.add_argument("item", help="NAME.Type, e.g. lh_bronze.Lakehouse")
     ls.add_argument("path", help="folder inside the item, e.g. Files/taxi")
     ls.set_defaults(func=cmd_ls)
+
+    cat = commands.add_parser("cat", help="print a small text file from a lakehouse")
+    cat.add_argument("item", help="NAME.Type, e.g. lh_bronze.Lakehouse")
+    cat.add_argument("path", help="path inside the item, e.g. Files/config/sources.json")
+    cat.set_defaults(func=cmd_cat)
 
     tables = commands.add_parser("tables", help="Delta tables of a lakehouse with row counts")
     tables.add_argument("item", help="NAME.Type, e.g. lh_bronze.Lakehouse")

@@ -40,7 +40,8 @@ flowchart LR
 | `tools/fabric_sync.py` | deploys `fabric/` to the workspace and exports it back through the Fabric REST API |
 | `sql/` | warehouse DDL, load scripts and analytical queries |
 | `docs/PLAN.md` | project plan split into segments, with progress |
-| `docs/` | data dictionary, lineage, governance |
+| `docs/DATA_DICTIONARY.md` | every Bronze and Silver table and column |
+| `docs/` | lineage, governance |
 
 ## Status
 
