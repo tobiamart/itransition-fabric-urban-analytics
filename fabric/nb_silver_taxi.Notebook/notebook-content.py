@@ -17,8 +17,7 @@
 # 1. **Standardise**: snake_case names, one fixed schema (files differ slightly between months).
 # 2. **Deduplicate**: identical rows are removed.
 # 3. **Enrich**: pickup date and hour, trip duration, airport flag, pickup / drop-off zone names.
-# 4. **Flag, don't drop**: suspicious rows get reasons in `dq_flags` and `is_valid = false`, so they
-#    can still be analysed; Gold uses only valid rows.
+# 4. **Flag, don't drop**: suspicious rows keep their reasons in `dq_flags`; rows failing an error check get `is_valid = false` and are left out of Gold, but stay in Silver for analysis.
 # Row counts and the number of rows per check go to `silver_dq_log`.
 
 # PARAMETERS CELL ********************
